@@ -16,10 +16,14 @@ import dash_core_components as dcc
 import dash_html_components as html
 import plotly.graph_objs as go
 
+import numpy as np
+
+from flask import redirect, send_from_directory
+import os
+
 # search UI
 #style = {"description_width":"220px"}
 #layout = ipw.Layout(width="90%")
-#inp_pks = ipw.Text(description='PKs', placeholder='e.g. 1006 1009 (space separated)', layout=layout, style=style)
 
 # quantities
 quantities = collections.OrderedDict([
@@ -41,18 +45,19 @@ bondtype_dict = collections.OrderedDict([
 bondtypes = list(bondtype_dict.keys())
 bondtype_colors = list(bondtype_dict.values())
 
-
 # sliders
 #inp_pks = ipw.Text(description='PKs', placeholder='e.g. 1006 1009 (space separated)', layout=layout, style=style)
 
 def get_slider(id, desc, range, default=None):
     if default is None:
         default = range
-    return html.Div([dcc.RangeSlider(id=id, min=range[0], max=range[1], value=default, step=1.0), html.Div(desc)])
+    #marks = { i : str(i) for i in np.linspace(range[0], range[1], 10) }
+    slider = dcc.RangeSlider(id=id, min=range[0], max=range[1], value=default, step=0.1)
+    return html.Div([html.Span(slider, className="slider"), html.Span(desc), html.Span('', id=id+"_range")])
 
 sliders_dict = collections.OrderedDict()
 for k,v in quantities.iteritems():
-    desc = "{} [{}]".format(v['label'], v['unit'])
+    desc = "{} [{}]: ".format(v['label'], v['unit'])
     if not 'default' in v.keys():
         v['default'] = None
 
@@ -74,23 +79,51 @@ ninps = len(inputs)
 
 inputs_dict = collections.OrderedDict()
 for k,v in inputs.iteritems():
-    inputs_dict[k] = html.Div([dcc.Dropdown(id=k, options=v['options'], value=v['default']), html.Div(v['label'])])
+    dropdown = dcc.Dropdown(id=k, options=v['options'], value=v['default'])
+    inputs_dict[k] = html.Div([html.Span(dropdown, className='dropdown'), html.Span(v['label']) ])
 
-inputs_html = html.Div( list(inputs_dict.values()), id='sliders' )
+inputs_html = html.Div( list(inputs_dict.values()), id='dropdowns' )
 inputs_states = [ dash.dependencies.State(k,'value') for k in inputs_dict.keys() ]
-
-app = dash.Dash()
 
 btn_plot = html.Div([html.Button('Plot', id='btn_plot'),
     dcc.Markdown('', id='plot_info')])
 
-graph = dcc.Graph(
-    id='scatter_plot',
+css = html.Link(
+    rel='stylesheet',
+    href='/static/style.css'
 )
 
-hover_info = dcc.Markdown('', id='hover_info')
+graph_layout = dict(autosize=False, width=600, height=600) 
+graph = html.Span(dcc.Graph(id='scatter_plot',figure=dict(layout=graph_layout)),
+        className='plot')
 
-app.layout = html.Div([sliders_html, inputs_html, btn_plot, graph, hover_info])
+
+## represents the URL bar, doesn't render anything
+#url_bar = dcc.Location(id='url_bar', refresh=False),
+
+hover_info = html.Span(dcc.Markdown('', id='hover_info'))
+click_info = html.Div('', id='click_info')
+
+
+# Creation of dash app
+app = dash.Dash()
+app.layout = html.Div([css, sliders_html, inputs_html, btn_plot, graph, hover_info,
+    click_info])
+
+
+# needed for css
+@app.server.route('/static/<path:path>')
+def static_file(path):
+    static_folder = os.path.join(os.getcwd(), 'static')
+    return send_from_directory(static_folder, path)
+
+# slider ranges
+for k,v in sliders_dict.iteritems():
+    @app.callback(
+            dash.dependencies.Output(k+'_range','children'),
+            [dash.dependencies.Input(k,'value')])
+    def range_output(value):
+        return "{} - {}".format(value[0], value[1])
 
 @app.callback(
     #[dash.dependencies.Output('plot_info', 'children'),
@@ -113,18 +146,69 @@ def update_output(n_clicks, *args):
     dash.dependencies.Output('hover_info', 'children'),
     [dash.dependencies.Input('scatter_plot', 'hoverData')])
 def update_text(hoverData):
+    if hoverData is None:
+        return ""
+
     uuid = hoverData['points'][0]['customdata']
-    rest_url = 'http://localhost:8000/explore/sssp/details'
+    rest_url = 'http://localhost:8000/explore/sssp/details/'
 
     node = load_node(uuid)
     attrs = node.get_attrs()
-    s = "[{url}]({url})\n".format(url=rest_url+uuid)
+    s = "[View AiiDA Node]({})\n".format(rest_url+uuid)
     for k,v in attrs.iteritems():
         if 'units' in k:
             continue
         s += " * {}: {}\n".format(k,v)
 
     return s
+
+#@app.callback(
+#    dash.dependencies.Output('url_bar', 'pathname'),
+#    [dash.dependencies.Input('scatter_plot', 'clickData')])
+#def update_url(figure, hoverData):
+#    if hoverData is None:
+#        return 
+#
+#    point = clickData['points'][0]
+#
+#    uuid = point['customdata']
+#    rest_url = 'http://localhost:8000/explore/sssp/details'
+#
+#    return rest_url + uuid
+
+#@app.callback(
+#    dash.dependencies.Output('scatter_plot', 'figure'),
+#    [dash.dependencies.Input('scatter_plot', 'figure'), 
+#     dash.dependencies.Input('scatter_plot', 'hoverData')])
+#def update_annotation(figure, hoverData):
+#    if hoverData is None:
+#        return figure
+#
+#    point = hoverData['points'][0]
+#
+#    uuid = point['customdata']
+#    rest_url = 'http://localhost:8000/explore/sssp/details'
+#
+#    annotation = dict(x=point['x'], y=point['y'], 
+#            text='<a href="{}/{}">o</a>'.format(rest_url, uuids))
+#
+#    figure['layout']['annotations'] = [annotation]
+#    return figure
+
+@app.callback(
+    dash.dependencies.Output('click_info', 'children'),
+    [dash.dependencies.Input('scatter_plot', 'clickData')])
+def display_click_data(clickData):
+    if clickData is None:
+        return ""
+
+    rest_url = 'http://localhost:8000/explore/sssp/details/'
+    uuid = clickData['points'][0]['customdata']
+
+    #redirect(rest_url+uuid, code=302)
+    #return "clicked" + uuid
+    redirect_string="<script>window.location.href='{}';</script>".format(rest_url+uuid)
+    return redirect_string
 
 
 def search(sliders_vals, inputs_vals):
@@ -181,8 +265,6 @@ def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_lab
 
     Returns figure object
     """
-
-
     colorscale = 'Jet'
     colorbar=go.ColorBar(title=clr_label, titleside='right')
 
@@ -196,16 +278,14 @@ def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_lab
     #
     #if with_links:
     #    layout = go.Layout(annotations=links, title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel))
-    layout = go.Layout(title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel), hovermode='closest')
+    graph_layout.update(dict(
+            title=title, 
+            xaxis=dict(title=xlabel), 
+            yaxis=dict(title=ylabel), 
+            hovermode='closest'
+    ))
 
-
-    #trace = go.Scattergl(x=x, y=y, mode='markers',
-    #                   marker=dict(size=10, line=dict(width=2)))
-
-    #layout = go.Layout(title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel),
-    #                  hovermode='closest')
-
-    figure= dict(data = [trace], layout = layout)
+    figure= dict(data = [trace], layout = graph_layout)
     return figure
 
 if __name__ == '__main__':
