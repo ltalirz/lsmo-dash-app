@@ -7,6 +7,7 @@ from aiida.backends import settings
 if not is_dbenv_loaded():
     load_dbenv(profile=settings.AIIDADB_PROFILE)
 
+from aiida.orm import load_node
 from aiida.orm.querybuilder import QueryBuilder
 from aiida.orm.data.parameter import ParameterData
 
@@ -87,7 +88,9 @@ graph = dcc.Graph(
     id='scatter_plot',
 )
 
-app.layout = html.Div([sliders_html, inputs_html, btn_plot, graph])
+hover_info = dcc.Markdown('', id='hover_info')
+
+app.layout = html.Div([sliders_html, inputs_html, btn_plot, graph, hover_info])
 
 @app.callback(
     #[dash.dependencies.Output('plot_info', 'children'),
@@ -106,23 +109,23 @@ def update_output(n_clicks, *args):
 
     return figure
 
-
 @app.callback(
-    dash.dependencies.Output('plot_info', 'children'),
+    dash.dependencies.Output('hover_info', 'children'),
     [dash.dependencies.Input('scatter_plot', 'hoverData')])
 def update_text(hoverData):
     uuid = hoverData['points'][0]['customdata']
     rest_url = 'http://localhost:8000/explore/sssp/details'
-    return "[{url}]({url})".format(url=rest_url+uuid)
-    #s = df[df['storenum'] == hoverData['points'][0]['customdata']]
-    #return html.H3(
-    #    'The {}, {} {} opened in {}'.format(
-    #        s.iloc[0]['STRCITY'],
-    #        s.iloc[0]['STRSTATE'],
-    #        s.iloc[0]['type_store'],
-    #        s.iloc[0]['YEAR']
-    #    )
-    #)
+
+    node = load_node(uuid)
+    attrs = node.get_attrs()
+    s = "[{url}]({url})\n".format(url=rest_url+uuid)
+    for k,v in attrs.iteritems():
+        if 'units' in k:
+            continue
+        s += " * {}: {}\n".format(k,v)
+
+    return s
+
 
 def search(sliders_vals, inputs_vals):
     """Query AiiDA database"""
@@ -184,7 +187,6 @@ def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_lab
     colorbar=go.ColorBar(title=clr_label, titleside='right')
 
     marker = dict(size=10, line=dict(width=2), color=clrs, colorscale=colorscale, colorbar=colorbar)
-    print(uuids)
     trace = go.Scatter(x=x, y=y, mode='markers', marker=marker, customdata=uuids)
     
     #N = len(x)
