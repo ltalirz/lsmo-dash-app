@@ -79,20 +79,19 @@ inputs_html = html.Div( list(inputs_dict.values()), id='sliders' )
 inputs_states = [ dash.dependencies.State(k,'value') for k in inputs_dict.keys() ]
 
 app = dash.Dash()
-layout = []
 
 btn_plot = html.Div([html.Button('Plot', id='btn_plot'),
-    html.Div('', id='plot_info')])
+    dcc.Markdown('', id='plot_info')])
 
 graph = dcc.Graph(
-    id='scatter-plot',
+    id='scatter_plot',
 )
 
 app.layout = html.Div([sliders_html, inputs_html, btn_plot, graph])
 
 @app.callback(
     #[dash.dependencies.Output('plot_info', 'children'),
-    dash.dependencies.Output('scatter-plot', 'figure'),
+    dash.dependencies.Output('scatter_plot', 'figure'),
     [dash.dependencies.Input('btn_plot', 'n_clicks')],
     sliders_states+inputs_states
     )
@@ -106,6 +105,24 @@ def update_output(n_clicks, *args):
     figure = search(sliders_vals, inputs_vals)
 
     return figure
+
+
+@app.callback(
+    dash.dependencies.Output('plot_info', 'children'),
+    [dash.dependencies.Input('scatter_plot', 'hoverData')])
+def update_text(hoverData):
+    uuid = hoverData['points'][0]['customdata']
+    rest_url = 'http://localhost:8000/explore/sssp/details'
+    return "[{url}]({url})".format(url=rest_url+uuid)
+    #s = df[df['storenum'] == hoverData['points'][0]['customdata']]
+    #return html.H3(
+    #    'The {}, {} {} opened in {}'.format(
+    #        s.iloc[0]['STRCITY'],
+    #        s.iloc[0]['STRSTATE'],
+    #        s.iloc[0]['type_store'],
+    #        s.iloc[0]['YEAR']
+    #    )
+    #)
 
 def search(sliders_vals, inputs_vals):
     """Query AiiDA database"""
@@ -152,6 +169,8 @@ def search(sliders_vals, inputs_vals):
     clrs = map(float, clrs)
     clr_label = "{} [{}]".format(quantities[inp_clr]['label'], quantities[inp_clr]['unit'])
 
+    uuids = map(str, uuids)
+
     return  plot_plotly(x, y, uuids, clrs, title=title, xlabel=xlabel, ylabel=ylabel, clr_label=clr_label)
 
 def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_label=None):
@@ -165,7 +184,8 @@ def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_lab
     colorbar=go.ColorBar(title=clr_label, titleside='right')
 
     marker = dict(size=10, line=dict(width=2), color=clrs, colorscale=colorscale, colorbar=colorbar)
-    trace = go.Scatter(x=x, y=y, mode='markers', marker=marker)
+    print(uuids)
+    trace = go.Scatter(x=x, y=y, mode='markers', marker=marker, customdata=uuids)
     
     #N = len(x)
     ## workaround for links - for proper handling of click events use plot.ly dash
@@ -186,38 +206,6 @@ def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_lab
     figure= dict(data = [trace], layout = layout)
     return figure
 
-    #app_simple.run_server(debug=True)
-    #proc = multiprocessing.Process(target=show_app, args=(app_simple,))
-    #proc.start()
-#
-#
-#
-#
-#
-##app = dash.Dash()
-##
-##app.layout = html.Div(children=[
-##    html.H1(children='Hello Dash'),
-##
-##    html.Div(children='''
-##        Dash: A web application framework for Python.
-##    '''),
-##
-##    dcc.Graph(
-##        id='example-graph',
-##        figure={
-##            'data': [
-##                {'x': [1, 2, 3], 'y': [4, 1, 2], 'type': 'bar', 'name': 'SF'},
-##                {'x': [1, 2, 3], 'y': [2, 4, 5], 'type': 'bar', 'name': u'Montréal'},
-##            ],
-##            'layout': {
-##                'title': 'Dash Data Visualization'
-##            }
-##        }
-##    )
-##])
-#
 if __name__ == '__main__':
-    #search()
     app.run_server(debug=True)
     #app.run_server()
