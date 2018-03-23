@@ -124,11 +124,11 @@ def search(sliders_vals, inputs_vals):
     inp_x = inputs_vals['inp_x']
     inp_y = inputs_vals['inp_y']
     inp_clr = inputs_vals['inp_clr']
-    projections = ['attributes.'+inp_x, 'attributes.'+inp_y, 'attributes.'+inp_clr, 'uuid']
     qb = QueryBuilder()
     qb.append(ParameterData,
           filters=filters,
-          project = projections
+          project = ['attributes.'+inp_x, 'attributes.'+inp_y, 
+                     'attributes.'+inp_clr, 'uuid']
     )
 
     nresults = qb.count()
@@ -140,70 +140,49 @@ def search(sliders_vals, inputs_vals):
 
     #query_message.value = "{} results found. Plotting...".format(nresults)
 
-    l = qb.all()
-    res = map(list, zip(*l))
-    x = map(float, res[0])
-    y = map(float, res[1])
-    if inp_clr == 'bond_type':
-        def apply_color(bond):
-            if bond == "amide":
-                return "#1f77b4" #blue
-            elif bond == "amine":
-                return "#d62728" #red
-            elif bond == "imine":
-                return  "#ff7f0e" #orange
-            elif bond == "CC":
-                return "#2ca02c" #green
-            elif bond == "mixed":
-                return "slategrey" #grey
-        clr = list(map(lambda x: apply_color(x), res[2]))
-    else:
-        #cmap = plt.cm.rainbow
-        #clr = cmap(map(float, res[2]))
-        clr = map(float, res[2])
-    uuid = res[3]
+    # x,y position
+    x, y, clrs, uuids = zip(*qb.all())
+    x = map(float, x)
+    y = map(float, y)
 
-    title = "{} vs {}".format(inp_y, inp_x)
+    title = "{} vs {}".format(quantities[inp_y]['label'], quantities[inp_x]['label'])
+    xlabel = '{} [{}]'.format(quantities[inp_x]['label'],quantities[inp_x]['unit'])
+    ylabel = '{} [{}]'.format(quantities[inp_y]['label'],quantities[inp_y]['unit'])
 
-    #qb = QueryBuilder()
-    #qb.append(ParameterData, filters=filters,
-    #    project = [ 'attributes.'+inp_x.value+'_units', 'attributes.'+inp_y.value+'_units'],
-    #)
-    #qb.limit(1)
-    #xlabel = inp_x.label + ' ['+qb.all()[0][0]+']'
-    #ylabel = inp_y.label+ ' ['+qb.all()[0][1]+']'
-    xlabel = inp_x
-    ylabel = inp_y
+    clrs = map(float, clrs)
+    clr_label = "{} [{}]".format(quantities[inp_clr]['label'], quantities[inp_clr]['unit'])
 
-    #if btn_mode.value is 'plotly':
-    #    plot_plotly(x, y, uuid, title=title, xlabel=xlabel, ylabel=ylabel)
-    #elif btn_mode.value is 'plotly_links':
-    return plot_dash(x, y, uuid, title=title, xlabel=xlabel, ylabel=ylabel, with_links=True)
-#    else:
-##         plt.xlabel(xlabel)
-##         plt.ylabel(ylabel)
-##         plt.title(title)
-##         plt.plot(x, y, clr )
-#        plt.scatter(x, y, c=clr, s=5, linewidth=0)
-#        #plt.scatter(x, clr)  #, s=5, linewidth=0)
-#
-#    query_message.value = "Plotted {} results.".format(nresults)
-#
-#
-def plot_dash(x, y, uuid, title=None, xlabel=None, ylabel=None, with_links=False):
+    return  plot_plotly(x, y, uuids, clrs, title=title, xlabel=xlabel, ylabel=ylabel, clr_label=clr_label)
 
-    trace = go.Scattergl(x=x, y=y, mode='markers',
-                       marker=dict(size=10, line=dict(width=2)))
+def plot_plotly(x, y, uuids, clrs, title=None, xlabel=None, ylabel=None, clr_label=None):
+    """Create plot using plot.ly
 
-    layout = go.Layout(title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel),
-                      hovermode='closest')
+    Returns figure object
+    """
 
-    #app_simple.layout = html.Div([
-    #    dcc.Graph(
-    #        id='scatter-plot',
-    #        figure= dict(data = [trace], layout = layout),
-    #    )
-    #])
+
+    colorscale = 'Jet'
+    colorbar=go.ColorBar(title=clr_label, titleside='right')
+
+    marker = dict(size=10, line=dict(width=2), color=clrs, colorscale=colorscale, colorbar=colorbar)
+    trace = go.Scatter(x=x, y=y, mode='markers', marker=marker)
+    
+    #N = len(x)
+    ## workaround for links - for proper handling of click events use plot.ly dash
+    #links = [ dict(x=x[i], y=y[i], text='<a href="{}/{}">o</a>'.format(rest_url, uuids[i]),
+    #               showarrow=False, font=dict(color='#ffffff'), opacity=0.1) for i in range(N)]
+    #
+    #if with_links:
+    #    layout = go.Layout(annotations=links, title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel))
+    layout = go.Layout(title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel), hovermode='closest')
+
+
+    #trace = go.Scattergl(x=x, y=y, mode='markers',
+    #                   marker=dict(size=10, line=dict(width=2)))
+
+    #layout = go.Layout(title=title, xaxis=dict(title=xlabel), yaxis=dict(title=ylabel),
+    #                  hovermode='closest')
+
     figure= dict(data = [trace], layout = layout)
     return figure
 
